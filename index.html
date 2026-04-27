@@ -1,0 +1,433 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ASPEN Trip Manager</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM (Core functionality) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (To translate the React code inside the browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom scrollbar hiding utility */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Smooth transitions */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800">
+    <!-- The app will be injected here -->
+    <div id="root"></div>
+
+    <!-- React Application Code -->
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        // --- CONSTANTS & CONFIG ---
+        const BUDGET_LIMIT = 5500;
+        const DATES = [
+          { id: '2025-04-26', label: 'Day 1: April 26', desc: 'Arrival & Check-in' },
+          { id: '2025-04-27', label: 'Day 2: April 27', desc: 'Main Exploration' },
+          { id: '2025-04-28', label: 'Day 3: April 28', desc: 'Departure' },
+        ];
+
+        const CATEGORIES = [
+          { id: 'HOTEL', label: 'Hotel & Stay', icon: 'fa-hotel', color: 'text-indigo-500', bg: 'bg-indigo-100' },
+          { id: 'CAR', label: 'Shared Car', icon: 'fa-car', color: 'text-sky-500', bg: 'bg-sky-100' },
+          { id: 'TRAIN', label: 'Train Ticket', icon: 'fa-train', color: 'text-emerald-500', bg: 'bg-emerald-100' },
+          { id: 'FOOD', label: 'Food & Drinks', icon: 'fa-utensils', color: 'text-orange-500', bg: 'bg-orange-100' },
+          { id: 'MISC', label: 'Miscellaneous', icon: 'fa-ellipsis-h', color: 'text-slate-500', bg: 'bg-slate-100' },
+        ];
+
+        const SPLIT_TYPES = [
+          { id: 'ALL', label: 'Full Group (All 10)' },
+          { id: 'TRAIN_GROUP', label: 'Train Passengers (8 Pax)' },
+          { id: 'DIRECT_GROUP', label: 'Direct Route (2 Pax)' },
+        ];
+
+        // --- MAIN APPLICATION COMPONENT ---
+        function App() {
+          const [activeTab, setActiveTab] = useState('home'); 
+          const [selectedDate, setSelectedDate] = useState(DATES[0].id);
+          
+          // Real-time expenses state
+          const [expenses, setExpenses] = useState([
+            { id: 1, date: '2025-04-26', category: 'HOTEL', description: 'Hotel Advance', amount: 10000, splitType: 'ALL' },
+            { id: 2, date: '2025-04-26', category: 'TRAIN', description: 'Malda to NJP Tickets', amount: 1520, splitType: 'TRAIN_GROUP' },
+          ]);
+
+          const renderView = () => {
+            switch (activeTab) {
+              case 'home': return <HomeView />;
+              case 'calendar': return <CalendarView onSelectDate={(date) => { setSelectedDate(date); setActiveTab('tracker'); }} />;
+              case 'tracker': return <TrackerView expenses={expenses} setExpenses={setExpenses} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />;
+              case 'dashboard': return <DashboardView expenses={expenses} />;
+              default: return <HomeView />;
+            }
+          };
+
+          return (
+            <div className="min-h-screen pb-24">
+              {/* Header */}
+              <header className="bg-slate-900 text-white p-6 shadow-lg rounded-b-3xl">
+                <h1 className="text-2xl font-bold tracking-tight text-center">ASPEN NEW PLAN</h1>
+                <p className="text-slate-400 text-sm text-center mt-1">Smart Trip & Expense Manager</p>
+              </header>
+
+              {/* Main Content */}
+              <main className="max-w-md mx-auto p-4 mt-2 fade-in">
+                {renderView()}
+              </main>
+
+              {/* Bottom Navigation */}
+              <nav className="fixed bottom-0 w-full bg-white border-t border-slate-200 flex justify-around items-center p-3 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] max-w-md left-1/2 -translate-x-1/2 rounded-t-3xl z-50">
+                <NavItem icon="fa-house" label="Plan" isActive={activeTab === 'home'} onClick={() => setActiveTab('home')} />
+                <NavItem icon="fa-calendar-days" label="Days" isActive={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
+                <NavItem icon="fa-plus" label="Track" isActive={activeTab === 'tracker'} onClick={() => setActiveTab('tracker')} special />
+                <NavItem icon="fa-chart-pie" label="Stats" isActive={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+              </nav>
+            </div>
+          );
+        }
+
+        // --- SUB-COMPONENTS (VIEWS) ---
+
+        const HomeView = () => (
+          <div className="space-y-6 fade-in">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+              <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <i className="fa-solid fa-circle-check text-emerald-500 text-xl"></i> Estimated Base Plan
+              </h2>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                  <span className="font-medium text-slate-600">Max Budget (PP)</span>
+                  <span className="text-lg font-bold text-slate-900">₹5,500</span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
+                    <i className="fa-solid fa-hotel text-indigo-500 mb-2 text-xl block"></i>
+                    <p className="text-xs text-indigo-600 font-semibold uppercase">Hotel</p>
+                    <p className="font-bold text-slate-800">₹2,000 <span className="text-[10px] font-normal text-slate-500">PP</span></p>
+                  </div>
+                  <div className="bg-sky-50 p-3 rounded-xl border border-sky-100">
+                    <i className="fa-solid fa-car text-sky-500 mb-2 text-xl block"></i>
+                    <p className="text-xs text-sky-600 font-semibold uppercase">Car (Est Max)</p>
+                    <p className="font-bold text-slate-800">₹1,200 <span className="text-[10px] font-normal text-slate-500">PP</span></p>
+                  </div>
+                </div>
+
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <i className="fa-solid fa-train text-emerald-500 mb-1 text-xl"></i>
+                      <p className="text-xs text-emerald-600 font-semibold uppercase">Train (8 Pax Only)</p>
+                    </div>
+                    <p className="font-bold text-slate-800">₹420 <span className="text-[10px] font-normal text-slate-500">PP</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-2xl shadow-md text-white relative overflow-hidden">
+              <h3 className="text-slate-300 text-sm font-medium mb-1 relative z-10">Safety Buffer</h3>
+              <div className="flex items-end justify-between relative z-10">
+                <div>
+                  <p className="text-3xl font-bold">₹1,880</p>
+                  <p className="text-xs text-slate-400 mt-1">Available PP for Food, BBQ & Misc</p>
+                </div>
+                <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm">
+                  <i className="fa-solid fa-fire text-orange-300 text-xl"></i>
+                </div>
+              </div>
+              <i className="fa-solid fa-utensils absolute -bottom-4 -right-4 text-white/5 text-8xl transform -rotate-12"></i>
+            </div>
+          </div>
+        );
+
+        const CalendarView = ({ onSelectDate }) => (
+          <div className="space-y-4 fade-in">
+            <h2 className="text-xl font-bold text-slate-800 px-1">Trip Itinerary</h2>
+            <p className="text-sm text-slate-500 px-1 mb-4">Select a day to log or view its expenses.</p>
+
+            {DATES.map((day, idx) => (
+              <button 
+                key={day.id}
+                onClick={() => onSelectDate(day.id)}
+                className="w-full bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between hover:border-sky-300 hover:shadow-md transition-all text-left"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center font-bold text-lg">
+                    {idx + 1}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">{day.label}</h3>
+                    <p className="text-sm text-slate-500">{day.desc}</p>
+                  </div>
+                </div>
+                <i className="fa-solid fa-arrow-right text-slate-300"></i>
+              </button>
+            ))}
+          </div>
+        );
+
+        const TrackerView = ({ expenses, setExpenses, selectedDate, setSelectedDate }) => {
+          const [form, setForm] = useState({ category: 'FOOD', description: '', amount: '', splitType: 'ALL' });
+
+          const handleAddExpense = (e) => {
+            e.preventDefault();
+            if (!form.description || !form.amount) return;
+            
+            const newExpense = {
+              id: Date.now(),
+              date: selectedDate,
+              category: form.category,
+              description: form.description,
+              amount: parseFloat(form.amount),
+              splitType: form.splitType
+            };
+            
+            setExpenses([newExpense, ...expenses]);
+            setForm({ ...form, description: '', amount: '' }); // reset
+          };
+
+          const dayExpenses = expenses.filter(e => e.date === selectedDate);
+          const currentDayLabel = DATES.find(d => d.id === selectedDate)?.label;
+
+          return (
+            <div className="space-y-6 fade-in">
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                {DATES.map(day => (
+                  <button 
+                    key={day.id}
+                    onClick={() => setSelectedDate(day.id)}
+                    className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                      selectedDate === day.id ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-800 mb-4">Log Expense for {currentDayLabel}</h3>
+                <form onSubmit={handleAddExpense} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Category</label>
+                      <select 
+                        className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-sky-500 text-sm"
+                        value={form.category}
+                        onChange={(e) => setForm({...form, category: e.target.value})}
+                      >
+                        {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Amount (₹)</label>
+                      <input 
+                        type="number" required placeholder="e.g. 500"
+                        className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-sky-500 text-sm"
+                        value={form.amount}
+                        onChange={(e) => setForm({...form, amount: e.target.value})}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Description</label>
+                    <input 
+                      type="text" required placeholder="What was this for?"
+                      className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-sky-500 text-sm"
+                      value={form.description}
+                      onChange={(e) => setForm({...form, description: e.target.value})}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Who is paying? (Split)</label>
+                    <select 
+                      className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-sky-500 text-sm"
+                      value={form.splitType}
+                      onChange={(e) => setForm({...form, splitType: e.target.value})}
+                    >
+                      {SPLIT_TYPES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                  </div>
+
+                  <button type="submit" className="w-full py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-md transition-colors">
+                    Add Expense
+                  </button>
+                </form>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-slate-500 uppercase mb-3 px-1">Today's Logs</h3>
+                {dayExpenses.length === 0 ? (
+                  <p className="text-center text-slate-400 py-6 bg-white rounded-2xl border border-dashed border-slate-200">No expenses logged yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {dayExpenses.map(exp => {
+                      const cat = CATEGORIES.find(c => c.id === exp.category);
+                      return (
+                        <div key={exp.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${cat.bg} ${cat.color}`}>
+                            <i className={`fa-solid ${cat.icon}`}></i>
+                          </div>
+                          <div className="flex-1 overflow-hidden">
+                            <h4 className="font-bold text-slate-800 leading-tight truncate">{exp.description}</h4>
+                            <p className="text-xs text-slate-400 mt-0.5">{SPLIT_TYPES.find(s=>s.id === exp.splitType)?.label}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="font-bold text-slate-900">₹{exp.amount}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        const DashboardView = ({ expenses }) => {
+          const stats = useMemo(() => {
+            let allShare = 0; let trainShare = 0; let nonTrainShare = 0; let totalSpent = 0;
+            let categoryTotals = { HOTEL: 0, CAR: 0, TRAIN: 0, FOOD: 0, MISC: 0 };
+
+            expenses.forEach(exp => {
+              totalSpent += exp.amount;
+              if (categoryTotals[exp.category] !== undefined) categoryTotals[exp.category] += exp.amount;
+
+              if (exp.splitType === 'ALL') allShare += (exp.amount / 10);
+              else if (exp.splitType === 'TRAIN_GROUP') trainShare += (exp.amount / 8);
+              else if (exp.splitType === 'DIRECT_GROUP') nonTrainShare += (exp.amount / 2);
+            });
+
+            const perPersonTrain = Math.round(allShare + trainShare);
+            const perPersonNoTrain = Math.round(allShare + nonTrainShare);
+            const mainPercentage = Math.min((perPersonTrain / BUDGET_LIMIT) * 100, 100);
+
+            return { perPersonTrain, perPersonNoTrain, totalSpent, categoryTotals, mainPercentage };
+          }, [expenses]);
+
+          return (
+            <div className="space-y-6 fade-in">
+              <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden">
+                <i className="fa-solid fa-chart-pie absolute -top-4 -right-4 text-white/5 text-9xl"></i>
+                
+                <h2 className="text-slate-300 text-sm font-medium mb-4 uppercase tracking-wider relative z-10">Per Person Budget Status</h2>
+                
+                <div className="mb-6 relative z-10">
+                  <div className="flex items-center gap-1 mb-2">
+                    <div className="w-full h-8 bg-slate-800 rounded-lg p-1 border border-slate-700 relative flex items-center">
+                      <div 
+                        className={`h-full rounded-md transition-all duration-1000 ${
+                          stats.mainPercentage > 85 ? 'bg-red-500' : stats.mainPercentage > 60 ? 'bg-yellow-500' : 'bg-emerald-500'
+                        }`}
+                        style={{ width: `${stats.mainPercentage}%` }}
+                      ></div>
+                    </div>
+                    <div className="w-1.5 h-4 bg-slate-700 rounded-r-sm"></div>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Spent: ₹{stats.perPersonTrain}</span>
+                    <span>Max: ₹{BUDGET_LIMIT}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 relative z-10">
+                  <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-sm">
+                    <p className="text-[10px] text-slate-300 uppercase">Train Pass. (8)</p>
+                    <p className="text-xl font-bold">₹{stats.perPersonTrain}</p>
+                    <p className="text-xs text-emerald-400 mt-1">₹{BUDGET_LIMIT - stats.perPersonTrain} left</p>
+                  </div>
+                  <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-sm">
+                    <p className="text-[10px] text-slate-300 uppercase">Direct Route (2)</p>
+                    <p className="text-xl font-bold">₹{stats.perPersonNoTrain}</p>
+                    <p className="text-xs text-emerald-400 mt-1">₹{BUDGET_LIMIT - stats.perPersonNoTrain} left</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-800 mb-4">Total Expenses by Category</h3>
+                
+                <div className="space-y-4">
+                  {CATEGORIES.map(cat => {
+                    const actualTotal = stats.categoryTotals[cat.id];
+                    const estMap = { HOTEL: 20000, CAR: 12000, TRAIN: 3360, FOOD: 10000, MISC: 9640 }; 
+                    const estimatedTotal = estMap[cat.id];
+                    const percent = Math.min((actualTotal / estimatedTotal) * 100, 100) || 0;
+                    
+                    return (
+                      <div key={cat.id}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                            <i className={`fa-solid ${cat.icon} w-3 text-center ${cat.color}`}></i> {cat.label}
+                          </span>
+                          <span className="text-slate-500">₹{actualTotal} / <span className="text-slate-300">₹{estimatedTotal}</span></span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${cat.bg.replace('bg-', 'bg-').replace('100', '500')}`} 
+                            style={{ width: `${percent}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        const NavItem = ({ icon, label, isActive, onClick, special }) => {
+          if (special) {
+            return (
+              <button onClick={onClick} className="relative -top-5 flex flex-col items-center">
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transform transition-transform active:scale-95 ${isActive ? 'bg-sky-600 text-white' : 'bg-slate-900 text-white'}`}>
+                  <i className={`fa-solid ${icon} text-xl`}></i>
+                </div>
+                <span className={`text-[10px] font-bold mt-1 ${isActive ? 'text-sky-600' : 'text-slate-500'}`}>{label}</span>
+              </button>
+            );
+          }
+
+          return (
+            <button onClick={onClick} className="flex flex-col items-center gap-1 w-16 transition-colors">
+              <i className={`fa-solid ${icon} text-xl ${isActive ? 'text-sky-600' : 'text-slate-400'}`}></i>
+              <span className={`text-[10px] font-bold ${isActive ? 'text-sky-600' : 'text-slate-400'}`}>{label}</span>
+            </button>
+          );
+        };
+
+        // Initialize App
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
+```
