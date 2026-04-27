@@ -185,7 +185,7 @@
               case 'home': return <HomeView budgetLimit={budgetLimit} setBudgetLimit={setBudgetLimit} userType={userType} setShowProfileModal={setShowProfileModal} />;
               case 'calendar': return <CalendarView onSelectDate={(date) => { setSelectedDate(date); setActiveTab('tracker'); }} completedTasks={completedTasks} setCompletedTasks={setCompletedTasks} setCongratsDay={setCongratsDay} />;
               case 'tracker': return <TrackerView expenses={expenses} setExpenses={setExpenses} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />;
-              case 'dashboard': return <DashboardView expenses={expenses} budgetLimit={budgetLimit} />;
+              case 'dashboard': return <DashboardView expenses={expenses} budgetLimit={budgetLimit} userType={userType} />;
               default: return <HomeView budgetLimit={budgetLimit} setBudgetLimit={setBudgetLimit} userType={userType} setShowProfileModal={setShowProfileModal} />;
             }
           };
@@ -501,7 +501,7 @@
         };
 
         const TrackerView = ({ expenses, setExpenses, selectedDate, setSelectedDate }) => {
-          const [form, setForm] = useState({ category: 'FOOD', description: '', amount: '', splitType: 'ALL' });
+          const [form, setForm] = useState({ category: 'FOOD', description: '', amount: '', splitType: 'INDIVIDUAL' });
           const [editingId, setEditingId] = useState(null);
           const [confirmDelete, setConfirmDelete] = useState(null); 
 
@@ -550,7 +550,7 @@
               };
               setExpenses([newExpense, ...expenses]);
             }
-            setForm({ category: 'FOOD', description: '', amount: '', splitType: 'ALL' });
+            setForm({ category: 'FOOD', description: '', amount: '', splitType: 'INDIVIDUAL' });
           };
 
           const handleEdit = (exp) => {
@@ -570,13 +570,13 @@
             setConfirmDelete(null);
             if (editingId === id) {
               setEditingId(null);
-              setForm({ category: 'FOOD', description: '', amount: '', splitType: 'ALL' });
+              setForm({ category: 'FOOD', description: '', amount: '', splitType: 'INDIVIDUAL' });
             }
           };
 
           const cancelEdit = () => {
             setEditingId(null);
-            setForm({ category: 'FOOD', description: '', amount: '', splitType: 'ALL' });
+            setForm({ category: 'FOOD', description: '', amount: '', splitType: 'INDIVIDUAL' });
           };
 
           useEffect(() => {
@@ -716,27 +716,43 @@
           );
         };
 
-        const DashboardView = ({ expenses, budgetLimit }) => {
+        const DashboardView = ({ expenses, budgetLimit, userType }) => {
           const stats = useMemo(() => {
             let allShare = 0; let trainShare = 0; let nonTrainShare = 0; let individualShare = 0; let totalSpent = 0;
             let categoryTotals = { HOTEL: 0, CAR: 0, TRAIN: 0, FOOD: 0, MISC: 0 };
+            let hasDefaultTrain = false;
 
             expenses.forEach(exp => {
               totalSpent += exp.amount;
               if (categoryTotals[exp.category] !== undefined) categoryTotals[exp.category] += exp.amount;
 
-              if (exp.splitType === 'ALL') allShare += (exp.amount / 10);
-              else if (exp.splitType === 'TRAIN_GROUP') trainShare += (exp.amount / 8);
-              else if (exp.splitType === 'DIRECT_GROUP') nonTrainShare += (exp.amount / 2);
-              else if (exp.splitType === 'INDIVIDUAL') individualShare += exp.amount;
+              if (exp.id === 'default_train') {
+                  hasDefaultTrain = true;
+                  trainShare += exp.amount; 
+              } else if (exp.splitType === 'ALL') {
+                  allShare += (exp.amount / 10);
+              } else if (exp.splitType === 'TRAIN_GROUP') {
+                  trainShare += (exp.amount / 8);
+              } else if (exp.splitType === 'DIRECT_GROUP') {
+                  nonTrainShare += (exp.amount / 2);
+              } else if (exp.splitType === 'INDIVIDUAL') {
+                  individualShare += exp.amount;
+              }
             });
 
-            const perPersonTrain = Math.round(allShare + trainShare + individualShare);
-            const perPersonNoTrain = Math.round(allShare + nonTrainShare + individualShare);
-            const mainPercentage = Math.min((perPersonTrain / budgetLimit) * 100, 100);
+            // If the user is 2-pax, they don't have the default_train log, 
+            // but we still want to show the correct projection for the Train Pass block.
+            const baseTrainCost = hasDefaultTrain ? 0 : 420;
 
-            return { perPersonTrain, perPersonNoTrain, totalSpent, categoryTotals, mainPercentage };
-          }, [expenses, budgetLimit]);
+            const perPersonTrain = Math.round(allShare + trainShare + individualShare + baseTrainCost);
+            const perPersonNoTrain = Math.round(allShare + nonTrainShare + individualShare);
+            
+            // The main progress bar and global spent string should reflect the active user's profile
+            const currentSpent = userType === 'DIRECT_GROUP' ? perPersonNoTrain : perPersonTrain;
+            const mainPercentage = Math.min((currentSpent / budgetLimit) * 100, 100);
+
+            return { perPersonTrain, perPersonNoTrain, totalSpent, categoryTotals, mainPercentage, currentSpent };
+          }, [expenses, budgetLimit, userType]);
 
           return (
             <div className="space-y-6 fade-in">
@@ -758,7 +774,7 @@
                     <div className="w-1.5 h-4 bg-slate-700 rounded-r-sm"></div>
                   </div>
                   <div className="flex justify-between text-xs text-slate-400">
-                    <span>Spent: ₹{stats.perPersonTrain}</span>
+                    <span>Spent: ₹{stats.currentSpent}</span>
                     <span>Max: ₹{budgetLimit}</span>
                   </div>
                 </div>
@@ -839,3 +855,4 @@
 
 
 ```
+
