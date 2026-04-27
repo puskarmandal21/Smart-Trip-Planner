@@ -76,7 +76,7 @@
 
     <!-- React Application Code -->
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
+        const { useState, useMemo, useEffect, useRef } = React;
 
         // --- CONSTANTS & CONFIG ---
         const DATES = [
@@ -100,7 +100,7 @@
           { id: 'INDIVIDUAL', label: 'Individual (Just Me)' },
         ];
 
-        const ITINERARY = {
+        const DEFAULT_ITINERARY = {
           '2025-06-04': [
             { id: 'd1_1', text: 'Pickup & transfer to Takdah' },
             { id: 'd1_2', text: 'Visit Selfie Dara View Point' },
@@ -161,11 +161,18 @@
             return saved ? Number(saved) : 5500;
           });
           
-          // LocalStorage for Expenses (Starts empty so we can properly inject defaults later)
+          // LocalStorage for Expenses
           const [expenses, setExpenses] = useState(() => {
             const saved = localStorage.getItem('aspen_expenses');
             if (saved && saved !== '[]') return JSON.parse(saved);
             return [];
+          });
+
+          // LocalStorage for Itinerary (Editable)
+          const [itinerary, setItinerary] = useState(() => {
+            const saved = localStorage.getItem('aspen_itinerary');
+            if (saved) return JSON.parse(saved);
+            return DEFAULT_ITINERARY;
           });
 
           // LocalStorage for Completed Tasks
@@ -178,12 +185,13 @@
           // Auto-save to LocalStorage whenever data changes
           useEffect(() => { localStorage.setItem('aspen_budget', budgetLimit.toString()); }, [budgetLimit]);
           useEffect(() => { localStorage.setItem('aspen_expenses', JSON.stringify(expenses)); }, [expenses]);
+          useEffect(() => { localStorage.setItem('aspen_itinerary', JSON.stringify(itinerary)); }, [itinerary]);
           useEffect(() => { localStorage.setItem('aspen_tasks', JSON.stringify(completedTasks)); }, [completedTasks]);
 
           const renderView = () => {
             switch (activeTab) {
               case 'home': return <HomeView budgetLimit={budgetLimit} setBudgetLimit={setBudgetLimit} userType={userType} setShowProfileModal={setShowProfileModal} />;
-              case 'calendar': return <CalendarView onSelectDate={(date) => { setSelectedDate(date); setActiveTab('tracker'); }} completedTasks={completedTasks} setCompletedTasks={setCompletedTasks} setCongratsDay={setCongratsDay} />;
+              case 'calendar': return <CalendarView onSelectDate={(date) => { setSelectedDate(date); setActiveTab('tracker'); }} completedTasks={completedTasks} setCompletedTasks={setCompletedTasks} setCongratsDay={setCongratsDay} itinerary={itinerary} setItinerary={setItinerary} />;
               case 'tracker': return <TrackerView expenses={expenses} setExpenses={setExpenses} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />;
               case 'dashboard': return <DashboardView expenses={expenses} budgetLimit={budgetLimit} userType={userType} />;
               default: return <HomeView budgetLimit={budgetLimit} setBudgetLimit={setBudgetLimit} userType={userType} setShowProfileModal={setShowProfileModal} />;
@@ -221,11 +229,9 @@
                           
                           setExpenses(prev => {
                             let next = [...prev];
-                            // Always ensure default hotel exists
                             if (!next.some(e => e.id === 'default_hotel')) {
                               next.push({ id: 'default_hotel', date: '2025-06-04', category: 'HOTEL', description: 'Hotel Advance Paid', amount: 500, splitType: 'INDIVIDUAL' });
                             }
-                            // Add default train ticket if missing
                             if (!next.some(e => e.id === 'default_train')) {
                               next.push({ id: 'default_train', date: '2025-06-04', category: 'TRAIN', description: 'Malda to NJP back to Malda Tickets', amount: 420, splitType: 'INDIVIDUAL' });
                             }
@@ -245,9 +251,7 @@
                           localStorage.setItem('aspen_user_type', 'DIRECT_GROUP');
                           
                           setExpenses(prev => {
-                            // Filter out the default train ticket completely
                             let next = prev.filter(e => e.id !== 'default_train');
-                            // Ensure default hotel still exists
                             if (!next.some(e => e.id === 'default_hotel')) {
                               next.push({ id: 'default_hotel', date: '2025-06-04', category: 'HOTEL', description: 'Hotel Advance Paid', amount: 500, splitType: 'INDIVIDUAL' });
                             }
@@ -407,28 +411,30 @@
           );
         };
 
-        const CalendarView = ({ onSelectDate, completedTasks, setCompletedTasks, setCongratsDay }) => {
+        const CalendarView = ({ onSelectDate, completedTasks, setCompletedTasks, setCongratsDay, itinerary, setItinerary }) => {
+          const [newTaskText, setNewTaskText] = useState({});
+          
+          // States for long press and editing
+          const [activeOptionsId, setActiveOptionsId] = useState(null);
+          const [editingTaskId, setEditingTaskId] = useState(null);
+          const [editTaskText, setEditTaskText] = useState('');
+          const [confirmModal, setConfirmModal] = useState(null); // { type: 'edit'|'delete', dayId, taskId, text?: string }
+          
+          const pressTimer = useRef(null);
           
           const handleToggle = (dayId, taskId) => {
+            if (activeOptionsId === taskId || editingTaskId === taskId) return;
             const isCompleting = !completedTasks.includes(taskId);
             let newTasks;
             
             if (isCompleting) {
               newTasks = [...completedTasks, taskId];
-              // Check if day is fully completed
-              const dayTasks = ITINERARY[dayId];
-              const allCompleted = dayTasks.every(t => newTasks.includes(t.id));
+              const dayTasks = itinerary[dayId] || [];
+              const allCompleted = dayTasks.length > 0 && dayTasks.every(t => newTasks.includes(t.id));
               
               if (allCompleted) {
-                // Fire confetti!
                 if (window.confetti) {
-                  window.confetti({
-                    particleCount: 150,
-                    spread: 80,
-                    origin: { y: 0.6 },
-                    colors: ['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6'],
-                    zIndex: 200
-                  });
+                  window.confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6'], zIndex: 200 });
                 }
                 setCongratsDay(dayId);
               }
@@ -438,17 +444,104 @@
             setCompletedTasks(newTasks);
           };
 
+          // Long Press Handlers
+          const handlePressStart = (taskId) => {
+              if (activeOptionsId || editingTaskId) return;
+              pressTimer.current = setTimeout(() => {
+                  setActiveOptionsId(taskId);
+              }, 600); // 600ms long press to trigger options
+          };
+
+          const handlePressEnd = () => {
+              if (pressTimer.current) {
+                  clearTimeout(pressTimer.current);
+                  pressTimer.current = null;
+              }
+          };
+
+          // Task Actions
+          const handleAddTask = (dayId, e) => {
+            e.preventDefault();
+            const text = newTaskText[dayId]?.trim();
+            if (!text) return;
+            const newTask = { id: `t_${Date.now()}`, text };
+            setItinerary({
+                ...itinerary,
+                [dayId]: [...(itinerary[dayId] || []), newTask]
+            });
+            setNewTaskText({ ...newTaskText, [dayId]: '' });
+          };
+
+          const startEdit = (task) => {
+            setEditingTaskId(task.id);
+            setEditTaskText(task.text);
+            setActiveOptionsId(null);
+          };
+
+          const requestSaveEdit = (dayId, taskId, e) => {
+            e.preventDefault();
+            setConfirmModal({ type: 'edit', dayId, taskId, text: editTaskText });
+          };
+
+          // Execute after user clicks "Yes" in confirmation modal
+          const executeConfirm = () => {
+              if (!confirmModal) return;
+
+              if (confirmModal.type === 'delete') {
+                  setItinerary({
+                      ...itinerary,
+                      [confirmModal.dayId]: itinerary[confirmModal.dayId].filter(t => t.id !== confirmModal.taskId)
+                  });
+                  setCompletedTasks(completedTasks.filter(id => id !== confirmModal.taskId));
+              } else if (confirmModal.type === 'edit') {
+                  const text = confirmModal.text.trim();
+                  if (text) {
+                      setItinerary({
+                          ...itinerary,
+                          [confirmModal.dayId]: itinerary[confirmModal.dayId].map(t => t.id === confirmModal.taskId ? { ...t, text } : t)
+                      });
+                  }
+              }
+
+              setConfirmModal(null);
+              setEditingTaskId(null);
+              setActiveOptionsId(null);
+          };
+
           return (
             <div className="space-y-5 fade-in">
-              <div className="px-1">
-                <h2 className="text-xl font-bold text-slate-800">Trip Itinerary & Tasks</h2>
-                <p className="text-sm text-slate-500">Track our progress and log daily expenses.</p>
+              <div className="px-1 flex justify-between items-end">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-800">Trip Itinerary & Tasks</h2>
+                    <p className="text-sm text-slate-500">Long press a task to edit or delete.</p>
+                </div>
               </div>
 
+              {/* Confirmation Modal */}
+              {confirmModal && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm fade-in">
+                  <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl">
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${confirmModal.type === 'delete' ? 'bg-red-100 text-red-500' : 'bg-emerald-100 text-emerald-500'}`}>
+                          <i className={`fa-solid ${confirmModal.type === 'delete' ? 'fa-trash' : 'fa-pen'} text-2xl`}></i>
+                      </div>
+                      <h2 className="text-xl font-bold text-slate-800 mb-2">Are you sure?</h2>
+                      <p className="text-slate-500 text-sm mb-6">
+                          {confirmModal.type === 'delete' ? 'Do you really want to delete this task? This cannot be undone.' : 'Do you want to save your changes to this task?'}
+                      </p>
+                      <div className="flex gap-3">
+                          <button onClick={() => setConfirmModal(null)} className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl transition-colors">Cancel</button>
+                          <button onClick={executeConfirm} className={`flex-1 py-3 text-white font-bold rounded-xl transition-colors ${confirmModal.type === 'delete' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                              {confirmModal.type === 'delete' ? 'Delete' : 'Save'}
+                          </button>
+                      </div>
+                  </div>
+                </div>
+              )}
+
               {DATES.map((day, idx) => {
-                const dayTasks = ITINERARY[day.id];
+                const dayTasks = itinerary[day.id] || [];
                 const completedCount = dayTasks.filter(t => completedTasks.includes(t.id)).length;
-                const progress = (completedCount / dayTasks.length) * 100;
+                const progress = dayTasks.length === 0 ? 0 : (completedCount / dayTasks.length) * 100;
 
                 return (
                   <div key={day.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
@@ -478,20 +571,67 @@
                     <div className="p-2">
                       {dayTasks.map((task) => {
                         const isChecked = completedTasks.includes(task.id);
+                        const isEditing = editingTaskId === task.id;
+                        const isShowingOptions = activeOptionsId === task.id;
+
                         return (
-                          <label key={task.id} className="flex items-start gap-3 p-3 hover:bg-slate-50 rounded-xl cursor-pointer transition-colors">
-                            <input 
-                              type="checkbox" 
-                              className="task-checkbox mt-0.5" 
-                              checked={isChecked}
-                              onChange={() => handleToggle(day.id, task.id)}
-                            />
-                            <span className={`text-sm select-none transition-colors duration-300 ${isChecked ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
-                              {task.text}
-                            </span>
-                          </label>
+                          <div 
+                            key={task.id} 
+                            className="flex items-start gap-2 p-2 hover:bg-slate-50 rounded-xl transition-colors group relative select-none"
+                            onTouchStart={() => handlePressStart(task.id)}
+                            onTouchEnd={handlePressEnd}
+                            onTouchMove={handlePressEnd}
+                            onMouseDown={() => handlePressStart(task.id)}
+                            onMouseUp={handlePressEnd}
+                            onMouseLeave={handlePressEnd}
+                            onContextMenu={(e) => { e.preventDefault(); }}
+                          >
+                            {isEditing ? (
+                                 <form onSubmit={(e) => requestSaveEdit(day.id, task.id, e)} className="flex-1 flex gap-2 items-center p-1 bg-sky-50 rounded-lg border border-sky-200 fade-in">
+                                     <input autoFocus value={editTaskText} onChange={e => setEditTaskText(e.target.value)} className="flex-1 p-2 text-sm bg-transparent outline-none font-medium text-slate-800" />
+                                     <button type="submit" className="w-8 h-8 flex items-center justify-center bg-emerald-500 text-white rounded-md shadow-sm transition-colors"><i className="fa-solid fa-check text-xs"></i></button>
+                                     <button type="button" onClick={() => setEditingTaskId(null)} className="w-8 h-8 flex items-center justify-center bg-white text-slate-500 rounded-md shadow-sm border border-slate-200 transition-colors"><i className="fa-solid fa-xmark text-xs"></i></button>
+                                 </form>
+                            ) : isShowingOptions ? (
+                                <div className="flex-1 flex gap-2 items-center justify-end bg-slate-100 p-2 rounded-lg relative overflow-hidden fade-in">
+                                    <span className="text-xs font-bold text-slate-500 uppercase flex-1 pl-2">Task Options</span>
+                                    <div className="flex gap-1.5">
+                                        <button type="button" onClick={() => startEdit(task)} className="w-8 h-8 flex items-center justify-center bg-white text-sky-600 rounded shadow-sm border border-slate-200 transition-colors"><i className="fa-solid fa-pen text-xs"></i></button>
+                                        <button type="button" onClick={() => setConfirmModal({ type: 'delete', dayId: day.id, taskId: task.id })} className="w-8 h-8 flex items-center justify-center bg-white text-red-600 rounded shadow-sm border border-slate-200 transition-colors"><i className="fa-solid fa-trash text-xs"></i></button>
+                                        <div className="w-px h-5 bg-slate-300 mx-1 self-center"></div>
+                                        <button type="button" onClick={() => setActiveOptionsId(null)} className="w-8 h-8 flex items-center justify-center bg-slate-200 text-slate-600 rounded transition-colors"><i className="fa-solid fa-xmark text-xs"></i></button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <label className="flex items-start gap-3 flex-1 cursor-pointer pointer-events-auto">
+                                  <input 
+                                    type="checkbox" 
+                                    className="task-checkbox mt-0.5" 
+                                    checked={isChecked}
+                                    onChange={() => handleToggle(day.id, task.id)}
+                                  />
+                                  <span className={`text-sm transition-colors duration-300 ${isChecked ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
+                                    {task.text}
+                                  </span>
+                                </label>
+                            )}
+                          </div>
                         )
                       })}
+
+                      {/* Add Task Form */}
+                      <form onSubmit={(e) => handleAddTask(day.id, e)} className="mt-2 p-2 pt-3 border-t border-slate-100 border-dashed flex gap-2">
+                          <input
+                              type="text"
+                              placeholder="Add a new task or destination..."
+                              className="flex-1 text-sm outline-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:border-sky-500 transition-colors"
+                              value={newTaskText[day.id] || ''}
+                              onChange={(e) => setNewTaskText({...newTaskText, [day.id]: e.target.value})}
+                          />
+                          <button type="submit" disabled={!newTaskText[day.id]?.trim()} className="w-9 h-9 bg-slate-800 text-white rounded-lg flex items-center justify-center disabled:opacity-50 disabled:bg-slate-300 transition-colors">
+                              <i className="fa-solid fa-plus text-sm"></i>
+                          </button>
+                      </form>
                     </div>
                   </div>
                 )
